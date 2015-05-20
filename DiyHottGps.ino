@@ -13,6 +13,7 @@
 #include "TinyGPS.h"
 
 //#define Vario
+//#define EAM
 
 TinyGPS gps; 
 
@@ -31,7 +32,7 @@ unsigned long age=0, dat=0, tim=0, ui_course=0;
 int alt=0;
 unsigned int numsat=0; 
 float alt_offset = 500;
-bool newdata = false;
+bool bGpsUpdate = false;
 uint32_t now = millis(); 
 
 uint16_t GPS_distanceToHome;
@@ -56,13 +57,20 @@ struct {
 
 #define LED 13 
 
-void setup() {
+void CheckGpsData( void );
+
+void setup( void ) 
+{
   
   pinMode(LED, OUTPUT);
-  Serial.begin(9600);
+  Serial.begin(57600);
 
   #ifdef Vario
 	setupAltitude();
+  #endif
+  
+  #ifdef EAM
+    setupEAM();
   #endif
   
   hottV4Setup();
@@ -73,24 +81,25 @@ void setup() {
   p_alt[3]=0;  
 }
 
-void loop() {
+void loop( void ) 
+{
 
-   smartdelay(200);
-	
-   gps.get_position(&lat, &lon, &age);
-   gps.get_position2(&lati, &loni, &age);
-   gps.f_get_position(&flat, &flon);
+	CheckGpsData();
+   if( bGpsUpdate )
+   {
+	gps.get_position(&lat, &lon, &age);
+	gps.get_position2(&lati, &loni, &age);
+	gps.f_get_position(&flat, &flon);
+	bGpsUpdate = false;
+   }
    
    #ifdef Vario
 	  alt = readAltitude();
    #else
 	  alt =  gps.altitude()/100;
-          
    #endif
    
-   
    now = millis();
-   
    if ((now - last) > 1000) //measure every second for Vario function
    {  
      last = now;
@@ -104,24 +113,24 @@ void loop() {
    hottV4SendTelemetry();
 }
 
+void CheckGpsData( void )
+{
+	while (Serial.available())
+   {
+	   gps.encode(Serial.read());
+	   bGpsUpdate = true;
+	}
+
+}
+
 void toggle_LED()
 {
  digitalWrite(LED, !digitalRead(LED)); 
 }
 
-void smartdelay(unsigned long ms)
-{
-  unsigned long start = millis();
-  do 
-  {
-    while (Serial.available())
-      gps.encode(Serial.read());
-  } while (millis() - start < ms);
-}
-
 void sethome()
 {
-   if (is_set_home == 0 && gps.satellites() >= 6)  // we need more than 6 sats
+   if (is_set_home == 0 && gps.satellites() >= 6)  // we need more than 5 sats
    {
        
        f_HOME_LAT = flat;

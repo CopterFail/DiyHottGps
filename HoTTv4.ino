@@ -1,10 +1,13 @@
 #include "HoTTv4.h"
 
-#define HOTTV4_RXTX 3
+#define HOTTV4_RX 3
+#define HOTTV4_TX 4
 #define HOTTV4_TX_DELAY 1000
 #define OFFSET_ALTITUDE 500
 #define OFFSET_M1S 30000
 #define OFFSET_M3S 120
+#define VOLTAGE_PIN	A0 
+#define BATTERY_LOW 34.0f	// 3V4
 
 static uint8_t outBuffer[173];
 
@@ -15,12 +18,16 @@ static int32_t m10s = 0;
 
 int16_t altitude = 0;
 
-SoftwareSerial hottV4Serial(HOTTV4_RXTX , HOTTV4_RXTX);
+void CheckGpsData( void );
+
+SoftwareSerial hottV4Serial(HOTTV4_RX , HOTTV4_TX);
 
 /**
  * Common setup method for HoTTv4
  */
 void hottV4Setup() {
+  pinMode(HOTTV4_TX, OUTPUT);
+  pinMode(HOTTV4_RX, INPUT);
   hottV4Serial.begin(19200);
   hottV4EnableReceiverMode();
 }
@@ -29,15 +36,22 @@ void hottV4Setup() {
  * Enables RX and disables TX
  */
 static inline void hottV4EnableReceiverMode() {
-  DDRD &= ~(1 << HOTTV4_RXTX);
-  PORTD |= (1 << HOTTV4_RXTX);
+  //DDRD &= ~(1 << HOTTV4_RXTX);
+  //PORTD |= (1 << HOTTV4_RXTX);
+  
+  //not needed if 2 pin are used:
+  DDRD &= ~(1 << HOTTV4_TX);  // set TX as input
+  PORTD |= (1 << HOTTV4_RX);
 }
 
 /**
  * Enabels TX and disables RX
  */
 static inline void hottV4EnableTransmitterMode() {
-  DDRD |= (1 << HOTTV4_RXTX);
+  //DDRD |= (1 << HOTTV4_RXTX);
+  
+  //not needed if 2 pin are used:
+  DDRD |= (1 << HOTTV4_TX);  // set TX as output
 }
 
 /**
@@ -87,6 +101,7 @@ static void hottV4SerialWrite(uint8_t c) {
       HoTTV4GPSModule.flightDirection = (gps.course()/100)/2;
       
       //VARIO  not implemented yet, should be a BMP085
+	  
       //m/s
       uint16_t vario1 = ((p_alt[0] - p_alt[1])*100) + OFFSET_M1S; // heightchange in cm + offset
       HoTTV4GPSModule.resolutionLow = vario1 & 0x00FF;//MultiHoTTModule.GPS_distanceToHome & 0x00FF;
@@ -170,10 +185,10 @@ static void hottV4SerialWrite(uint8_t c) {
     memset(&outBuffer, 0, sizeof(outBuffer));
 
     // Copy GPS data to output buffer
-    memcpy(&outBuffer, &HoTTV4GPSModule, kHoTTv4BinaryPacketSize);
+    memcpy(&outBuffer, &HoTTV4GPSModule, sizeof(HoTTV4GPSModule));
 
     // Send data from output buffer
-    hottV4SendData(outBuffer, kHoTTv4BinaryPacketSize);
+    hottV4SendData(outBuffer, sizeof(HoTTV4GPSModule));
   }
 
   /**
@@ -280,7 +295,7 @@ static void updateVarioAltitude() {
  
 /**
  Sends HoTTv4 capable VARIO telemetry frame.
-static void hottV4SendVARIO() {
+static void hottV4SendVARIO( void ) {
    Minimum data set for Vario 
   HoTTV4VarioModule.startByte = 0x7C;
   HoTTV4VarioModule.sensorID = HOTTV4_VARIO_SENSOR_ID;
@@ -295,25 +310,100 @@ static void hottV4SendVARIO() {
   memset(&outBuffer, 0, sizeof(outBuffer));
   
   // Copy EAM data to output buffer
-  memcpy(&outBuffer, &HoTTV4VarioModule, kHoTTv4BinaryPacketSize);
+  memcpy(&outBuffer, &HoTTV4VarioModule, sizeof(HoTTV4VarioModule));
   
   // Send data from output buffer
-  hottV4SendData(outBuffer, kHoTTv4BinaryPacketSize);
+  hottV4SendData(outBuffer, sizeof(HoTTV4VarioModule));
 }*/
+
+/**
+*/
+static void vSetupEAM( void )
+{
+	memset(&HoTTV4ElectricAirModule, 0, sizeof(HoTTV4ElectricAirModule));	// set all to 0
+}
+
+static void vUpdateEAM( void )
+{
+	uint16_t ui16RawADW;
+	static uint8_t ui8CellCount = 0;
+	static float fVoltage = 0.0f;
+	
+	ui16RawADW = analogRead( VOLTAGE_PIN );	 // 1024 == REFERENCE_VOLTAGE (3V3)
+	if( fVoltage > 0.1f )
+	{
+		fVoltage += float(ui16RawADW) * 0.355f; // 1024 / (3V3*11) = 28.2 ; 10 / 28.2 = 0.355
+		fVoltage *= 0.5f; 
+	}
+	else
+	{
+		// this will be done once after power up:
+		vSetupEAM();
+		fVoltage = float(ui16RawADW) * 0.355f;
+		if( fVoltage > 128.0f ) ui8CellCount = 4;		// 12.8V is maximum for 3S
+		else if( fVoltage > 86.0f ) ui8CellCount = 3;	// 8.6V is maximum for 2S
+		else if( fVoltage > 44.0f ) ui8CellCount = 2;	// 4.4V is maximum for 1S
+		else ui8CellCount = 1;
+	}
+	
+	if( fVoltage < (ui8CellCount * BATTERY_LOW) )
+	{
+      HoTTV4ElectricAirModule.alarmTone = 18;	// undervoltage sensor 1?
+	}
+	else
+	{
+      HoTTV4ElectricAirModule.alarmTone = 0x0;
+	}
+	
+	HoTTV4ElectricAirModule.battery1 = round(fVoltage);
+	//HoTTV4ElectricAirModule.battery2 = ui16RawADW;
+}
+
+/**
+ Sends HoTTv4 capable EAM telemetry frame.
+ */
+static void hottV4SendEAM() 
+{
+  // Minimum data set for EAM 
+  HoTTV4ElectricAirModule.startByte = 0x7C;
+  HoTTV4ElectricAirModule.sensorID = HOTTV4_EAM_SENSOR_ID;
+  HoTTV4ElectricAirModule.sensorTextID = HOTTV4_EAM_SENSOR_TEXT_ID;
+  HoTTV4ElectricAirModule.endByte = 0x7D;
+
+  
+  vUpdateEAM();
+
+  // Clear output buffer
+  memset(&outBuffer, 0, sizeof(outBuffer));
+  
+  // Copy EAM data to output buffer
+  memcpy(&outBuffer, &HoTTV4ElectricAirModule, sizeof(HoTTV4ElectricAirModule) );
+  
+  // Send data from output buffer
+  hottV4SendData(outBuffer, sizeof(HoTTV4ElectricAirModule) );
+}
 
 
  /* Expects an array of at least size bytes. All bytes till size will be transmitted
  * to the HoTT capable receiver. Last byte will always be treated as checksum and is
  * calculated on the fly.
  */
-static void hottV4SendData(uint8_t *data, uint8_t size) {
+static void hottV4SendData(uint8_t *data, uint8_t size) 
+{
+	uint32_t ui32stop;
   hottV4Serial.flush();
 
   // Protocoll specific waiting time
-  // to avoid collisions
-  delay(5);
+  // to avoid collisions, do not answer
+  // is additional bytes were received.
+  ui32stop = millis() + 5;
+  while( ui32stop >= millis() )
+  {
+	CheckGpsData();
+  }
 
-  if (hottV4Serial.available() == 0) {
+  if (hottV4Serial.available() == 0)
+  {
     hottV4EnableTransmitterMode();
 
     uint16_t crc = 0;
@@ -324,6 +414,7 @@ static void hottV4SendData(uint8_t *data, uint8_t size) {
 
       // Protocoll specific delay between each transmitted byte
       delayMicroseconds(HOTTV4_TX_DELAY);
+	  CheckGpsData();
     }
 
     // Write package checksum
@@ -337,45 +428,47 @@ static void hottV4SendData(uint8_t *data, uint8_t size) {
  * Entry point to send HoTTv4 capable data frames according to the
  * requested module.
  */
-void hottV4SendTelemetry() {
-  static enum _hottV4_state {
-    IDLE,
-    BINARY,
-    TEXT,
-  } hottV4_state = IDLE;
+void hottV4SendTelemetry() 
+{
+  static uint8_t ui8LastSensorID = 0;
+  static uint8_t ui8SensorID = 0;
+  static uint8_t ui8TelegramType = 0;
 
-  if (hottV4Serial.available() > 1) {
-    for (uint8_t i = 0; i < 2; i++) {
-      uint8_t c = hottV4Serial.read();
+  while (hottV4Serial.available() > 0) 
+  {
+	  ui8TelegramType = ui8SensorID;
+	  ui8SensorID = hottV4Serial.read();
 
-      if (IDLE == hottV4_state) {
-        switch (c) {
-          case 0x80:
-            hottV4_state = BINARY;
-            break;
-          case 0x7F:
-            hottV4_state = TEXT;
-            break;
-          default:
-            hottV4_state = IDLE;
-        }
-      } else if (BINARY == hottV4_state) {
-        switch (c) {
-            
+	  if( ui8TelegramType == 0x80 )	//BINARY
+	  {
+		if(ui8SensorID == ui8LastSensorID )	// successively same sensor id should not be supported (?)
+		{
+			ui8SensorID = 0;
+		}
+		ui8LastSensorID = ui8SensorID;
+
+		switch (ui8SensorID) 
+		{
 	    case HOTTV4_GPS_SENSOR_ID:
             hottV4SendGPS();
-            hottV4_state = IDLE;
-        break;
-		
+			break;
 	    case HOTTV4_VARIO_SENSOR_ID:
             //hottV4SendVARIO();
-            //hottV4_state = IDLE;
-        break;
-            
-           default:
-            hottV4_state = IDLE;
+			break;
+	    case HOTTV4_EAM_SENSOR_ID:
+            hottV4SendEAM();
+			break;
+        default:
+			break;
         }
-      } 
-    }
+	  }
+	  else if( ui8TelegramType == 0x7F )	//TEXT
+	  {
+		  // currently not supported
+	  }
+	  else
+	  {
+		  // not supported
+	  }
   }
 }

@@ -2,13 +2,16 @@
 #define HoTTv4_h
 
 #define HOTTV4_GPS_SENSOR_ID 0x8A // GPS Sensor ID
-#define HOTTV4_GPS_SENSOR_TEXT_ID 0xA0 // GPS Module ID
+#define HOTTV4_GPS_SENSOR_TEXT_ID 0xA0 // GPS Module TEXT ID
 
 #define HOTTV4_VARIO_SENSOR_ID 0x89 // Vario Sensor ID
-#define HOTTV4_VARIO_SENSOR_TEXT_ID 0x90 // Vario Module ID
+#define HOTTV4_VARIO_SENSOR_TEXT_ID 0x90 // Vario Module TEXT ID
 
-const uint8_t kHoTTv4BinaryPacketSize = 45; 
-const uint8_t kHoTTv4TextPacketSize = 173;
+#define HOTTV4_EAM_SENSOR_ID 0x8E // Electric Air Module ID
+#define HOTTV4_EAM_SENSOR_TEXT_ID 0xE0 // Electric Air Module TEXT ID
+
+//const uint8_t kHoTTv4BinaryPacketSize = 45; 
+//const uint8_t kHoTTv4TextPacketSize = 173;
 
 typedef enum {
   HoTTv4NotificationErrorCalibration     = 0x01,
