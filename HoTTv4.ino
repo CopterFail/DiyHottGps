@@ -397,7 +397,7 @@ static void hottV4SendData(uint8_t *data, uint8_t size)
   // to avoid collisions, do not answer
   // is additional bytes were received.
   ui32stop = millis() + 5;
-  while( ui32stop >= millis() )
+  while( ui32stop > millis() )
   {
 	CheckGpsData();
   }
@@ -413,8 +413,15 @@ static void hottV4SendData(uint8_t *data, uint8_t size)
       hottV4SerialWrite(data[i]);
 
       // Protocoll specific delay between each transmitted byte
-      delayMicroseconds(HOTTV4_TX_DELAY);
-	  CheckGpsData();
+      //delayMicroseconds(HOTTV4_TX_DELAY);
+	  //CheckGpsData();
+      // GPS may send up to 5-6 bytes per ms, expect an overflow in micros()
+	  ui32stop = micros() + HOTTV4_TX_DELAY;
+	  while( ui32stop > micros() )
+	  {
+		CheckGpsData();
+	  }
+
     }
 
     // Write package checksum
@@ -449,7 +456,7 @@ void hottV4SendTelemetry()
 	  {
 		if(ui8SensorID == ui8LastSensorID )	// successively same sensor id should not be supported (?)
 		{
-			//ui8SensorID = 0;
+			ui8SensorID = 0;
 		}
 		ui8LastSensorID = ui8SensorID;
 

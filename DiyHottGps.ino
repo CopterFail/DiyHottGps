@@ -10,7 +10,7 @@
 
 #include "SoftwareSerial.h"
 #include <avr/io.h> 
-#include "TinyGPS.h"
+#include "DiyTinyGPS.h"
 
 //#define Vario
 //#define EAM
