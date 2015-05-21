@@ -175,7 +175,7 @@ static void hottV4SerialWrite(uint8_t c) {
     if (is_set_home == 0)
     {
       HoTTV4GPSModule.alarmTone = 0x08; //alarm tone if no fix
-	  toggle_LED(); 					//Let the led blink
+	  //toggle_LED(); 					//Let the led blink
     }else
     {
       HoTTV4GPSModule.alarmTone = 0x0;
@@ -421,6 +421,12 @@ static void hottV4SendData(uint8_t *data, uint8_t size)
     hottV4SerialWrite(crc & 0xFF);
 
     hottV4EnableReceiverMode();
+	
+	if( DiyHottStatus == FIX_FROM_GPS )
+	{
+		DiyHottStatus = HOTT_GOT_DATA;
+	}
+
   }
 }
 
@@ -443,7 +449,7 @@ void hottV4SendTelemetry()
 	  {
 		if(ui8SensorID == ui8LastSensorID )	// successively same sensor id should not be supported (?)
 		{
-			ui8SensorID = 0;
+			//ui8SensorID = 0;
 		}
 		ui8LastSensorID = ui8SensorID;
 
